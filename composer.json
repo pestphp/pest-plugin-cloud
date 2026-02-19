@@ -1,5 +1,5 @@
 {
-    "name": "pestphp/pest-plugin-template",
+    "name": "pestphp/pest-plugin-cloud",
     "description": "My awesome plugin",
     "keywords": [
         "php",
@@ -18,7 +18,7 @@
     },
     "autoload": {
         "psr-4": {
-            "Pest\\PluginName\\": "src/"
+            "Pest\\PestCloud\\": "src/"
         },
         "files": [
             "src/Autoload.php"
@@ -29,6 +29,13 @@
     },
     "minimum-stability": "dev",
     "prefer-stable": true,
+    "extra": {
+        "pest": {
+            "plugins": [
+                "Pest\\PestCloud\\Plugin"
+            ]
+        }
+    },
     "config": {
         "sort-packages": true,
         "preferred-install": "dist",
