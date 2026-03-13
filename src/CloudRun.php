@@ -330,8 +330,12 @@ class CloudRun
             throw new RuntimeException('Network error: '.$error);
         }
 
-        /** @var array{id?: string, url?: string, status?: string, message?: string}|null $body */
+        /** @var array{data?: array{id?: string, url?: string, status?: string}, message?: string}|null $body */
         $body = json_decode((string) $response, true);
+
+        if (is_array($body) && isset($body['data']) && is_array($body['data'])) {
+            $body = $body['data'];
+        }
 
         if ($httpCode === 401) {
             throw new RuntimeException('Authentication failed (401): Check your API token.');
