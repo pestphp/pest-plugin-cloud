@@ -18,6 +18,8 @@ class CloudRun
 
     private const int MAX_RETRIES = 3;
 
+    private const int POLL_TIMEOUT = 600;
+
     /**
      * @param  array<int, string>  $arguments
      */
@@ -69,9 +71,17 @@ class CloudRun
 
             echo "Run created successfully.\n";
             echo "ID: {$response['id']}\n";
-            echo "Status: {$response['status']}\n";
 
-            return 0;
+            $result = $this->poll($response['url'], $apiToken);
+
+            if ($result['output'] !== null && $result['output'] !== '') {
+                echo $result['output'];
+            }
+
+            return match ($result['status']) {
+                'passed' => 0,
+                default => 1,
+            };
         } finally {
             if (file_exists($tarballPath)) {
                 unlink($tarballPath);
@@ -207,7 +217,59 @@ class CloudRun
     }
 
     /**
-     * @return array{id: string, status: string}
+     * @return array{id: string, url: string, status: string, exit_code: int|null, output: string|null, started_at: string|null, finished_at: string|null}
+     */
+    private function poll(string $url, string $apiToken): array
+    {
+        $terminalStatuses = ['passed', 'failed', 'errored', 'cancelled'];
+        $deadline = time() + self::POLL_TIMEOUT;
+
+        while (time() < $deadline) {
+            sleep(2);
+
+            $ch = curl_init($url);
+
+            curl_setopt_array($ch, [
+                CURLOPT_HTTPHEADER => [
+                    'Authorization: Bearer '.$apiToken,
+                    'Accept: application/json',
+                ],
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 30,
+            ]);
+
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+            curl_close($ch);
+
+            if ($response === false || $httpCode !== 200) {
+                fwrite(STDERR, "Warning: Failed to poll run status (HTTP {$httpCode}). Retrying...\n");
+
+                continue;
+            }
+
+            $body = json_decode((string) $response, true);
+
+            if (! is_array($body) || ! isset($body['status'])) {
+                fwrite(STDERR, "Warning: Unexpected poll response. Retrying...\n");
+
+                continue;
+            }
+
+            /** @var array{id: string, url: string, status: string, exit_code: int|null, output: string|null, started_at: string|null, finished_at: string|null} $body */
+            echo "Status: {$body['status']}\n";
+
+            if (in_array($body['status'], $terminalStatuses, true)) {
+                return $body;
+            }
+        }
+
+        throw new RuntimeException('Timed out after '.self::POLL_TIMEOUT.' seconds.');
+    }
+
+    /**
+     * @return array{id: string, url: string, status: string}
      */
     private function upload(string $apiUrl, string $apiToken, string $tarballPath, string $pestArguments): array
     {
@@ -234,7 +296,7 @@ class CloudRun
     }
 
     /**
-     * @return array{id: string, status: string}
+     * @return array{id: string, url: string, status: string}
      */
     private function doUpload(string $url, string $apiToken, string $tarballPath, string $pestArguments): array
     {
@@ -268,7 +330,7 @@ class CloudRun
             throw new RuntimeException('Network error: '.$error);
         }
 
-        /** @var array{id?: string, status?: string, message?: string}|null $body */
+        /** @var array{id?: string, url?: string, status?: string, message?: string}|null $body */
         $body = json_decode((string) $response, true);
 
         if ($httpCode === 401) {
@@ -285,10 +347,10 @@ class CloudRun
             throw new RuntimeException("Server error ({$httpCode}): The service may be temporarily unavailable.");
         }
 
-        if ($httpCode !== 201 || ! is_array($body) || ! isset($body['id'], $body['status'])) {
+        if ($httpCode !== 201 || ! is_array($body) || ! isset($body['id'], $body['url'], $body['status'])) {
             throw new RuntimeException("Unexpected response (HTTP {$httpCode}): ".$response);
         }
 
-        return ['id' => $body['id'], 'status' => $body['status']];
+        return ['id' => $body['id'], 'url' => $body['url'], 'status' => $body['status']];
     }
 }

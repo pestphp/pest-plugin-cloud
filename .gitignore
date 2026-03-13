@@ -10,6 +10,4 @@ coverage.xml
 *.swp
 *.swo
 .phpunit.cache
-
-# For now
 .claude
