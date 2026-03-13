@@ -248,7 +248,7 @@ class CloudRun
             curl_close($ch);
 
             if ($response === false || $httpCode !== 200) {
-                fwrite(STDERR, "Warning: Failed to poll run status (HTTP {$httpCode}). Retrying...\n");
+                fwrite(STDERR, "Warning: Failed to get the run status (HTTP {$httpCode}). Retrying...\n");
 
                 continue;
             }
@@ -260,7 +260,7 @@ class CloudRun
             }
 
             if (! is_array($body) || ! isset($body['status'])) {
-                fwrite(STDERR, "Warning: Unexpected poll response. Retrying...\n");
+                fwrite(STDERR, "Warning: Unexpected response while updating status. Retrying...\n");
 
                 continue;
             }
