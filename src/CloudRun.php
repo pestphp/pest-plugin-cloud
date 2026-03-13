@@ -69,14 +69,9 @@ class CloudRun
 
             $response = $this->upload($apiUrl, $apiToken, $tarballPath, $pestArguments);
 
-            echo "Run created successfully.\n";
-            echo "ID: {$response['id']}\n";
+            fwrite(STDOUT, "Run started, with ID: {$response['id']}\n");
 
             $result = $this->poll($response['url'], $apiToken);
-
-            if ($result['output'] !== null && $result['output'] !== '') {
-                echo $result['output'];
-            }
 
             return match ($result['status']) {
                 'passed' => 0,
@@ -223,9 +218,18 @@ class CloudRun
     {
         $terminalStatuses = ['passed', 'failed', 'errored', 'cancelled'];
         $deadline = time() + self::POLL_TIMEOUT;
+        $outputOffset = 0;
 
         while (time() < $deadline) {
-            sleep(2);
+            sleep(1);
+
+            fwrite(STDOUT, '.');
+
+            while (ob_get_level() > 0) {
+                ob_end_flush();
+            }
+
+            flush();
 
             $ch = curl_init($url);
 
@@ -251,6 +255,10 @@ class CloudRun
 
             $body = json_decode((string) $response, true);
 
+            if (is_array($body) && isset($body['data']) && is_array($body['data'])) {
+                $body = $body['data'];
+            }
+
             if (! is_array($body) || ! isset($body['status'])) {
                 fwrite(STDERR, "Warning: Unexpected poll response. Retrying...\n");
 
@@ -258,11 +266,16 @@ class CloudRun
             }
 
             /** @var array{id: string, url: string, status: string, exit_code: int|null, output: string|null, started_at: string|null, finished_at: string|null} $body */
-            echo "Status: {$body['status']}\n";
+            if (is_string($body['output']) && strlen($body['output']) > $outputOffset) {
+                echo substr($body['output'], $outputOffset);
+                $outputOffset = strlen($body['output']);
+            }
 
             if (in_array($body['status'], $terminalStatuses, true)) {
                 return $body;
             }
+
+            fwrite(STDOUT, '_');
         }
 
         throw new RuntimeException('Timed out after '.self::POLL_TIMEOUT.' seconds.');
@@ -333,7 +346,7 @@ class CloudRun
         /** @var array{data?: array{id?: string, url?: string, status?: string}, message?: string}|null $body */
         $body = json_decode((string) $response, true);
 
-        if (is_array($body) && isset($body['data']) && is_array($body['data'])) {
+        if (is_array($body) && isset($body['data'])) {
             $body = $body['data'];
         }
 
