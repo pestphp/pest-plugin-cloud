@@ -56,6 +56,7 @@ class CloudRun
             return 1;
         }
 
+        $composerLockHash = $this->computeComposerLockHash($projectPath);
         $tarballPath = $this->createTarball($projectPath, $files);
 
         try {
@@ -67,7 +68,7 @@ class CloudRun
                 return 1;
             }
 
-            $response = $this->upload($apiUrl, $apiToken, $tarballPath, $pestArguments);
+            $response = $this->upload($apiUrl, $apiToken, $tarballPath, $pestArguments, $composerLockHash);
 
             fwrite(STDOUT, "Run started, with ID: {$response['id']}\n");
 
@@ -211,6 +212,19 @@ class CloudRun
         return $tarballPath;
     }
 
+    private function computeComposerLockHash(string $projectPath): ?string
+    {
+        $lockPath = $projectPath.'/composer.lock';
+
+        if (! is_file($lockPath)) {
+            return null;
+        }
+
+        $hash = hash_file('sha256', $lockPath);
+
+        return $hash !== false ? $hash : null;
+    }
+
     /**
      * @return array{id: string, url: string, status: string, exit_code: int|null, output: string|null, started_at: string|null, finished_at: string|null}
      */
@@ -284,14 +298,14 @@ class CloudRun
     /**
      * @return array{id: string, url: string, status: string}
      */
-    private function upload(string $apiUrl, string $apiToken, string $tarballPath, string $pestArguments): array
+    private function upload(string $apiUrl, string $apiToken, string $tarballPath, string $pestArguments, ?string $composerLockHash): array
     {
         $url = rtrim($apiUrl, '/').'/api/run';
         $lastException = null;
 
         for ($attempt = 1; $attempt <= self::MAX_RETRIES; $attempt++) {
             try {
-                return $this->doUpload($url, $apiToken, $tarballPath, $pestArguments);
+                return $this->doUpload($url, $apiToken, $tarballPath, $pestArguments, $composerLockHash);
             } catch (RuntimeException $e) {
                 $lastException = $e;
 
@@ -311,7 +325,7 @@ class CloudRun
     /**
      * @return array{id: string, url: string, status: string}
      */
-    private function doUpload(string $url, string $apiToken, string $tarballPath, string $pestArguments): array
+    private function doUpload(string $url, string $apiToken, string $tarballPath, string $pestArguments, ?string $composerLockHash): array
     {
         $ch = curl_init($url);
 
@@ -321,6 +335,10 @@ class CloudRun
 
         if ($pestArguments !== '') {
             $postFields['pest_arguments'] = $pestArguments;
+        }
+
+        if ($composerLockHash !== null) {
+            $postFields['composer_lock_hash'] = $composerLockHash;
         }
 
         curl_setopt_array($ch, [
